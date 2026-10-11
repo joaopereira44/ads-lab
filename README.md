@@ -11,12 +11,29 @@ com a posicao no ranking de impressoes da propria Ad Library.
 ```bash
 cp .env.example .env    # preencher APIFY_TOKEN, GROQ_API_KEY, TYPESAFE_API_KEY
 npm run doctor          # prova as chaves sem gastar nada
+npm start               # painel em http://127.0.0.1:5191
+```
+
+No painel: **Nova analise**, cole a URL da pagina na Ad Library e um nome em kebab-case.
+O painel e o mesmo do creator-lab (parede de criativos, mapa, inspetor do roteiro,
+tabela de padroes, comparacao lado a lado, replay), com as metricas de anuncio:
+
+- Eixo X: posicao no ranking de impressoes da Ad Library (ou anuncios no mesmo criativo).
+- Eixo Y: dias no ar.
+- Tabela: posicao mediana, criativos no topo (10% melhores posicoes), anuncios por criativo, dias no ar.
+
+Pausar manda SIGTERM ao `run.mjs`: o que terminou fica salvo, e retomar puxa do cache.
+
+Sem painel, pelo terminal:
+
+```bash
 node --env-file=.env run.mjs --url "<URL da Ad Library>" --name <slug> --limit 300 --budget 0.5
 ```
 
 - `--apify-run <id>` reaproveita uma coleta ja paga (nao cobra de novo).
 - Rodar de novo com o mesmo `--name` retoma de onde parou; transcricao e Jev ficam em cache.
-- Saida: `data/runs/<slug>/run.json` e `data/runs/<slug>/report.html`.
+- Saida: `data/runs/<slug>/run.json` e `data/runs/<slug>/report.html` (relatorio estatico, tambem em `/report/<slug>` no painel).
+- A coleta iniciada fica em `scrape.json`: pausar ou cair durante a coleta nunca cobra a Apify duas vezes.
 
 Precisa de Node 22.9+ e, so para video que a Groq nao consegue baixar, FFmpeg no PATH.
 

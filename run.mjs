@@ -36,21 +36,31 @@ let run=await readJSON(join(dir,'run.json'));
 let raw=await readJSON(join(dir,'raw.json'));
 if(!raw){
  let scrape;
- if(o['apify-run'])scrape=await providers.pollScrape(o['apify-run'],keys.apify);
- else{if(!o.url)throw new Error('Passe --url, --apify-run ou retome um run existente');scrape=await providers.startScrape({url:o.url,limit:Number(o.limit),budget:Number(o.budget),activeStatus:o.status},keys.apify);log('Apify iniciado',scrape.id);}
+ // A started scrape is remembered so a pause or crash never pays Apify twice.
+ const started=(await readJSON(join(dir,'scrape.json')))?.id;
+ if(o['apify-run']||started)scrape=await providers.pollScrape(o['apify-run']||started,keys.apify);
+ else{if(!o.url)throw new Error('Passe --url, --apify-run ou retome um run existente');scrape=await providers.startScrape({url:o.url,limit:Number(o.limit),budget:Number(o.budget),activeStatus:o.status},keys.apify);await atomic(join(dir,'scrape.json'),{id:scrape.id,url:o.url});log('Apify iniciado',scrape.id);}
+ log('Coletando anuncios na Apify');
  while(!['SUCCEEDED','FAILED','ABORTED','TIMED-OUT'].includes(scrape.status)){await providers.delay(5000);scrape=await providers.pollScrape(scrape.id,keys.apify);}
  raw=await providers.dataset(scrape.defaultDatasetId,keys.apify,Number(o.limit)+50);
+ if(!raw.length)throw new Error(`Apify nao devolveu anuncios (${scrape.status})`);
  await atomic(join(dir,'raw.json'),raw);
- run={name:o.name,url:o.url||raw[0]?.url||'',apifyRun:scrape.id,apifyUsd:scrape.usageTotalUsd??null,collectedAt:new Date().toISOString(),schemaVersion:VERSION,creatives:groupCreatives(raw)};
+ run={name:o.name,pageName:raw[0]?.page_name||raw[0]?.snapshot?.page_name||o.name,url:o.url||raw[0]?.url||'',apifyRun:scrape.id,apifyUsd:scrape.usageTotalUsd??null,collectedAt:new Date().toISOString(),schemaVersion:VERSION,creatives:groupCreatives(raw)};
  await atomic(join(dir,'run.json'),run);log(`${raw.length} anuncios, ${run.creatives.length} criativos`);
 }
-const save=()=>atomic(join(dir,'run.json'),run);
+run.pageName||=raw[0]?.page_name||o.name;
+let writing=Promise.resolve();
+const save=()=>(writing=writing.catch(()=>{}).then(()=>atomic(join(dir,'run.json'),run)));
+// The dashboard pauses a run with SIGTERM: keep what finished, the cache makes resume cheap.
+let stopping=false;
+process.on('SIGTERM',()=>{stopping=true;log('Pausa pedida; terminando as requisicoes em andamento');});
 
 // 2. Transcribe and classify each creative once (cached across runs).
 const pacer=providers.createRequestPacer(Number(env.GROQ_REQUESTS_PER_MINUTE||20));
 const pending=run.creatives.filter(c=>c.videoUrl&&(!c.analysis||c.analysis.schemaVersion!==VERSION)&&!c.excludedReason);
 let cursor=0,done=0;
-const worker=async()=>{while(cursor<pending.length){const c=pending[cursor++];c.error=null;
+run.status='running';await save();
+const worker=async()=>{while(cursor<pending.length&&!stopping){const c=pending[cursor++];c.error=null;
  try{
   if(!c.transcript){const cached=await readJSON(join(cacheDir,`transcript-${c.id}.json`));
    c.transcript=cached||await providers.transcribe({videoUrl:c.videoUrl,audioUrl:''},keys.transcribe,tmp,{provider,language:o.language,pacer});
@@ -61,13 +71,15 @@ const worker=async()=>{while(cursor<pending.length){const c=pending[cursor++];c.
   c.analysis=cached||await providers.classify(t,keys.jev);delete c.analysis.raw;if(!cached)await atomic(join(cacheDir,key+'.json'),c.analysis);
   c.status='complete';
  }catch(e){if(e instanceof providers.NoAudioTrackError){c.status='no_audio';c.excludedReason=e.message;}else{c.status='failed';c.error=e.message;log(c.id,e.message);if([401,403].includes(e.status))throw e;}}
- done++;if(done%10===0){log(`${done}/${pending.length}`);await save();}
+ const n=++done;await save();if(n%10===0||n===pending.length)log(`${n}/${pending.length}`);
 }};
 log(`${pending.length} criativos para processar`);
 await Promise.all(Array.from({length:Number(o.concurrency)},worker));
 const seen=new Map();for(const c of run.creatives){if(!c.transcript)continue;const fp=fingerprint(c.transcript.text);c.duplicateOf=seen.get(fp)||null;if(!seen.has(fp))seen.set(fp,c.id);}
 run.costs={apify:run.apifyUsd,transcription:run.creatives.reduce((s,c)=>s+(c.transcript?.costUsd||0),0),jev:run.creatives.reduce((s,c)=>s+(c.analysis?.costUsd||0),0)};
+run.status=stopping?'paused':run.creatives.some(c=>c.status==='failed')?'partial':'complete';
 await save();
+if(stopping){log('Pausado');process.exit(0);}
 const report=await writeReport(run,join(dir,'report.html'));
 const n=s=>run.creatives.filter(c=>c.status===s).length;
 log(`Pronto: ${n('complete')} classificados, ${n('failed')} falhas, ${n('no_speech')+n('no_audio')} sem fala. Relatorio: ${report}`);
