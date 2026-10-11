@@ -1,0 +1,14 @@
+{
+  "name": "ads-lab",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Meta Ad Library research with Apify, Groq or Fireworks, and Jev. Sibling of creator-lab.",
+  "license": "MIT",
+  "engines": { "node": ">=22.9.0" },
+  "scripts": {
+    "run-ads": "node --env-file-if-exists=.env run.mjs",
+    "doctor": "node --env-file-if-exists=.env run.mjs --name doctor --dry-run",
+    "check": "node --check run.mjs && node --check lib/data.mjs && node --check lib/schema.mjs && node --check lib/report.mjs && node --check lib/providers.mjs"
+  }
+}
