@@ -12,6 +12,6 @@
     "start": "node --env-file-if-exists=.env server.mjs",
     "run-ads": "node --env-file-if-exists=.env run.mjs",
     "doctor": "node --env-file-if-exists=.env run.mjs --name doctor --dry-run",
-    "check": "node --check server.mjs && node --check run.mjs && node --check lib/data.mjs && node --check lib/schema.mjs && node --check lib/report.mjs && node --check lib/providers.mjs && node --check lib/adapt.mjs && node --check public/app.js && node --check public/research.mjs"
+    "check": "node --check server.mjs && node --check run.mjs && node --check lib/data.mjs && node --check lib/schema.mjs && node --check lib/report.mjs && node --check lib/providers.mjs && node --check lib/adapt.mjs && node --check lib/funnel.mjs && node --check lib/xquiz.mjs && node --check lib/browser.mjs && node --check public/app.js && node --check public/research.mjs"
   }
 }

@@ -35,6 +35,26 @@ node --env-file=.env run.mjs --url "<URL da Ad Library>" --name <slug> --limit 3
 - Saida: `data/runs/<slug>/run.json` e `data/runs/<slug>/report.html` (relatorio estatico, tambem em `/report/<slug>` no painel).
 - A coleta iniciada fica em `scrape.json`: pausar ou cair durante a coleta nunca cobra a Apify duas vezes.
 
+### Funil do destino (prototipo)
+
+`--funil` faz um retrato datado de cada URL de destino dos anuncios (ate 3, `--funil-max`):
+
+- **Fluxo:** se a pagina e um quiz do xQuiz, le o fluxo inteiro que ela entrega no carregamento
+  (perguntas, opcoes, precos, VSL, teste A/B, paginas desligadas, links de checkout).
+- **Rede:** abre o Chrome ou Edge instalado em modo headless (protocolo DevTools, sem npm; `CHROME_PATH`
+  se nao achar), clica a primeira opcao de cada pergunta e registra pixel, eventos e ferramentas
+  (Meta, UTMify, Taboola, Google, Clarity, TikTok, contador proprio, player de video).
+  Nunca preenche formulario: para quando aparece campo. O Meta bloqueia navegador automatico,
+  entao o retrato nao prova disparo de evento do Pixel.
+- **Etiqueta:** cada achado sai como observado, inferido ou desconhecido.
+
+Salva em `data/runs/<slug>/funil/AAAA-MM-DD.json`, compara com a leitura anterior (pergunta,
+preco, VSL, pixel, checkout, A/B) e mostra no `report.html`. Cerca de 1 min por destino, sem custo.
+
+```bash
+node --env-file=.env run.mjs --name victor-molinn --funil
+```
+
 Precisa de Node 22.9+ e, so para video que a Groq nao consegue baixar, FFmpeg no PATH.
 
 ## Custos (piloto com 251 anuncios, 108 criativos)

@@ -3,6 +3,7 @@
 //   node --env-file=.env run.mjs --url "<Ad Library URL>" --name victor-molinn [--limit 300] [--budget 0.5]
 //   node --env-file=.env run.mjs --apify-run <runId> --name victor-molinn   (reuse a paid scrape, no new charge)
 //   node --env-file=.env run.mjs --name victor-molinn                       (resume an existing run)
+//   add --funil to also portrait each ad destination (flow, tracking, checkout) and diff it with the last one.
 //   add --dry-run to check keys and the plan without spending anything.
 import {mkdir,readFile,writeFile,rename} from 'node:fs/promises';
 import {join,dirname} from 'node:path';
@@ -13,9 +14,10 @@ import * as providers from './lib/providers.mjs';
 import {cacheKey,VERSION} from './lib/schema.mjs';
 import {groupCreatives,fingerprint} from './lib/data.mjs';
 import {writeReport} from './lib/report.mjs';
+import {runFunnel,latestFunnel,findChrome} from './lib/funnel.mjs';
 
 const ROOT=dirname(fileURLToPath(import.meta.url));
-const {values:o}=parseArgs({options:{url:{type:'string'},name:{type:'string'},'apify-run':{type:'string'},limit:{type:'string',default:'300'},budget:{type:'string',default:'0.5'},concurrency:{type:'string',default:'4'},language:{type:'string',default:'pt'},'dry-run':{type:'boolean',default:false},status:{type:'string',default:'active'}}});
+const {values:o}=parseArgs({options:{url:{type:'string'},name:{type:'string'},'apify-run':{type:'string'},limit:{type:'string',default:'300'},budget:{type:'string',default:'0.5'},concurrency:{type:'string',default:'4'},language:{type:'string',default:'pt'},'dry-run':{type:'boolean',default:false},status:{type:'string',default:'active'},funil:{type:'boolean',default:false},'funil-max':{type:'string',default:'3'}}});
 if(!o.name||!/^[a-z0-9-]{2,60}$/.test(o.name))throw new Error('--name em kebab-case e obrigatorio (ex.: victor-molinn)');
 const env=process.env,provider=env.TRANSCRIPTION_PROVIDER||'groq';
 providers.setJevProvider(env.JEV_PROVIDER||'typesafe');
@@ -28,6 +30,7 @@ const log=(...a)=>console.log(new Date().toISOString().slice(11,19),...a);
 
 if(o['dry-run']){
  for(const [name,key] of [['apify',keys.apify],[provider,keys.transcribe],['jev',keys.jev]]){const r=await providers.checkProvider(name==='groq'||name==='fireworks'?name:name,key);log(name,r.verified?'ok':`FALHOU ${r.error||'sem chave'}`);}
+ if(o.funil){const chrome=await findChrome();log('chrome',chrome||'NAO ENCONTRADO (defina CHROME_PATH); o funil sai sem a rede');}
  log('Plano:',o.url?`coletar ate ${o.limit} anuncios (teto US$ ${o.budget})`:o['apify-run']?`reaproveitar run ${o['apify-run']}`:'retomar run existente');process.exit(0);
 }
 
@@ -80,6 +83,8 @@ run.costs={apify:run.apifyUsd,transcription:run.creatives.reduce((s,c)=>s+(c.tra
 run.status=stopping?'paused':run.creatives.some(c=>c.status==='failed')?'partial':'complete';
 await save();
 if(stopping){log('Pausado');process.exit(0);}
-const report=await writeReport(run,join(dir,'report.html'));
+// 3. Funnel portrait (layer 3): only with --funil; otherwise the report keeps the last saved one.
+const funnel=o.funil?await runFunnel(run,dir,{log,max:Number(o['funil-max'])}):await latestFunnel(dir);
+const report=await writeReport(run,join(dir,'report.html'),{funnel});
 const n=s=>run.creatives.filter(c=>c.status===s).length;
 log(`Pronto: ${n('complete')} classificados, ${n('failed')} falhas, ${n('no_speech')+n('no_audio')} sem fala. Relatorio: ${report}`);
